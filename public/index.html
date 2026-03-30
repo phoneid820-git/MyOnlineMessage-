@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Chat Secure Login</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        /* --- AAPKA ORIGINAL DESIGN (GLASS EFFECTS) --- */
+        :root {
+            --glass: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.15);
+            --accent: #00d2ff; 
+            --bg-color: #0f172a; 
+            --footer-muted: rgba(255, 255, 255, 0.5); 
+            --error-red: #ff4b2b;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+
+        body {
+            height: 100dvh; width: 100vw; background: var(--bg-color);
+            background-image: radial-gradient(circle at top right, #1e293b 0%, #0f172a 100%);
+            color: white; overflow: hidden; position: fixed;
+        }
+
+        .glass-card {
+            background: var(--glass); backdrop-filter: blur(25px); -webkit-backdrop-filter: blur(25px);
+            border: 1px solid var(--glass-border); border-radius: 35px;
+            padding: 15px 25px 15px 25px; text-align: center;
+            box-shadow: 0 40px 80px rgba(0, 0, 0, 0.5);
+            position: fixed; top: 55%; left: 50%; transform: translate(-50%, -50%); 
+            width: 90%; max-width: 400px; z-index: 100;
+        }
+
+        .premium-chat-icon { font-size: 65px; margin-top: 0; margin-bottom: 5px; display: inline-block; }
+        .chat-header { font-size: 36px; font-weight: 500; color: #ffffff; margin-bottom: 2px; line-height: 1; }
+        .subtitle { font-size: 14px; color: var(--accent); margin-bottom: 20px; font-weight: 500; }
+
+        .input-container { position: relative; margin-bottom: 12px; text-align: left; width: 100%; }
+        .input-container i { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: var(--accent); font-size: 18px; }
+        
+        input { 
+            width: 100%; padding: 15px 20px 15px 55px; background: rgba(255, 255, 255, 0.05); 
+            border: 1px solid var(--glass-border); border-radius: 50px; color: white; outline: none; font-size: 16px;
+        }
+
+        .login-btn {
+            width: 55%; padding: 14px; background: linear-gradient(135deg, #00d2ff 0%, #3a7bd5 100%);
+            border: none; border-radius: 50px; color: white; font-weight: 800; cursor: pointer; 
+            margin: 15px auto 0; display: block; box-shadow: 0 10px 20px rgba(0, 210, 255, 0.2);
+        }
+
+        .footer-text { margin-top: 10px; margin-bottom: 5px; font-size: 12px; color: var(--footer-muted); line-height: 1.4; }
+
+        #customPopup {
+            display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 85%; max-width: 320px; background: var(--glass); backdrop-filter: blur(30px);
+            border: 1px solid var(--glass-border); border-radius: 35px; 
+            text-align: center; padding: 35px 20px; z-index: 9999;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+
+    <div class="glass-card" id="loginCard">
+        <div class="premium-chat-icon">💬</div>
+        <h1 class="chat-header">Vibe connect</h1>
+        <p class="subtitle">Secure Network Message Online</p>
+
+        <form id="loginForm">
+            <div class="input-container">
+                <i class="fa-solid fa-user-shield"></i> 
+                <input type="text" id="userId" placeholder="User ID" required autocomplete="off">
+            </div>
+            <div class="input-container">
+                <i class="fa-solid fa-key"></i> 
+                <input type="password" id="password" placeholder="Password" required autocomplete="off">
+            </div>
+            <button type="submit" class="login-btn" id="loginBtn">Login</button>
+        </form>
+        <div class="footer-text">Chatting Is Real-Time<br>Issue Date: 27 Mar 2026</div>
+    </div>
+
+    <div id="customPopup">
+        <i id="popupIcon" class="fa-solid fa-circle-exclamation" style="font-size:55px; color:var(--error-red); margin-bottom:15px;"></i>
+        <div id="popupHeader" style="color:#fff; font-weight:800; font-size:22px; margin-bottom:10px;">Alert Message</div>
+        <div id="popupMsg" style="color:rgba(255,255,255,0.9); font-size:15px; line-height:1.4;"></div>
+        <div id="timerDisplay" style="display:none; font-size:24px; color:var(--accent); font-family:monospace; margin-top:10px;">48:00:00</div>
+    </div>
+
+    <script>
+        const socket = io(); 
+        const loginForm = document.getElementById('loginForm');
+        const popup = document.getElementById('customPopup');
+        const popupMsg = document.getElementById('popupMsg');
+        let attemptCount = 0; 
+
+        // 1. AUTO-REDIRECT LOGIC: Agar user pehle se login hai to dashboard par bhejo
+        window.onload = () => {
+            if (localStorage.getItem('loggedInUser')) {
+                window.location.replace("dashboard.html");
+            }
+        };
+
+        const authorizedUsers = {
+            "user@1": "12345", "user@2": "123456", "user@3": "1234567",
+            "user@4": "12345678", "user@5": "123456789"
+        };
+
+        loginForm.onsubmit = (e) => {
+            e.preventDefault();
+            const uId = document.getElementById('userId').value.trim();
+            const pWd = document.getElementById('password').value;
+
+            if (authorizedUsers[uId] && authorizedUsers[uId] === pWd) {
+                // Login Success: Session save karein
+                localStorage.setItem('loggedInUser', uId);
+                socket.emit('user-login', uId);
+                window.location.href = "dashboard.html";
+            } else {
+                attemptCount++;
+                handleLoginFailure();
+            }
+        };
+
+        function handleLoginFailure() {
+            if (attemptCount === 1) { popupMsg.innerText = "Ghalat User ID ya Password!"; showPopup(3000); } 
+            else if (attemptCount === 2) { popupMsg.innerText = "Wrong Password! 3 bar dala to block ho jaega."; showPopup(4500); } 
+            else if (attemptCount >= 3) {
+                popupMsg.innerText = "Account Block 48 Ghante Ke Liye";
+                document.getElementById('loginBtn').disabled = true;
+                document.getElementById('loginBtn').style.opacity = "0.5";
+                showPopup(0); startTimer();
+            }
+        }
+
+        function showPopup(duration) {
+            popup.style.display = "block";
+            if (duration > 0) setTimeout(() => { popup.style.display = "none"; }, duration);
+        }
+
+        function startTimer() {
+            const timer = document.getElementById('timerDisplay');
+            timer.style.display = "block";
+            let sec = 48 * 3600;
+            const interval = setInterval(() => {
+                let h = Math.floor(sec / 3600);
+                let m = Math.floor((sec % 3600) / 60);
+                let s = sec % 60;
+                timer.innerText = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+                if (sec <= 0) { clearInterval(interval); location.reload(); }
+                sec--;
+            }, 1000);
+        }
+    </script>
+</body>
+</html>
